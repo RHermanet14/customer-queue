@@ -2,6 +2,8 @@ import express, { Request, Response } from "express";
 import { Pool } from "pg";
 import cors from "cors";
 import dotenv from 'dotenv';
+import { setupWebRoutes } from "./routes/web";
+import { setupPhoneRoutes } from "./routes/phone";
 
 dotenv.config();
 
@@ -28,31 +30,9 @@ app.get("/api/test-db", async (req: Request, res: Response) => {
   }
 });
 
-// Get all enum values for locations
-app.get("/api/locations", async (req: Request, res: Response) => {
-  try {
-    const result = await pool.query(
-      `SELECT enumlabel as location 
-       FROM pg_enum 
-       WHERE enumtypid = (
-         SELECT oid 
-         FROM pg_type 
-         WHERE typname = 'location_enum'
-       )
-       ORDER BY enumsortorder`
-    );
-    const locations = result.rows.map((row) => row.location);
-    console.log("Fetched locations:", locations);
-    res.json(locations);
-  } catch (error: any) {
-    console.error("Error fetching locations:", error);
-    res.status(500).json({ 
-      error: "Failed to fetch locations",
-      message: error.message,
-      hint: error.code === "42P01" ? "The 'location_enum' type does not exist. Please run db.sql to create it." : "Check database connection and enum type existence."
-    });
-  }
-});
+// Set up routes for each frontend
+app.use(setupWebRoutes(pool));
+app.use(setupPhoneRoutes(pool));
 
 // Test database connection on startup
 pool.query("SELECT NOW()")
