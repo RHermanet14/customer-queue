@@ -9,6 +9,7 @@ CREATE TABLE customer (
     location location_enum NOT NULL,
     queue_position INT NOT NULL,
     add_time TIMESTAMP DEFAULT NOW(),
-    remove_time TIMESTAMP,
+    start_time TIMESTAMP,
+    complete_time TIMESTAMP,
     status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled'))
 );
