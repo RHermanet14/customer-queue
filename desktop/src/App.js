@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
+import { Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
 import './App.css';
 
 function LocationsPage() {
@@ -79,16 +79,269 @@ function LocationsPage() {
 function LocationDetailPage() {
   const navigate = useNavigate();
   const { locationName } = useParams();
-  const location = decodeURIComponent(locationName || '');
+  const initialLocation = decodeURIComponent(locationName || '');
+  
+  const [locations, setLocations] = useState([]);
+  const [selectedLocation, setSelectedLocation] = useState(initialLocation);
+  const [firstName, setFirstName] = useState('');
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    // Fetch available locations for the dropdown
+    fetch('http://localhost:3000/api/locations')
+      .then(response => {
+        if (!response.ok) {
+          return response.json().then(err => {
+            throw new Error(err.message || 'Failed to fetch locations');
+          });
+        }
+        return response.json();
+      })
+      .then(data => {
+        setLocations(data);
+        // If initial location is not in the list, add it or use first available
+        if (initialLocation && !data.includes(initialLocation)) {
+          setSelectedLocation(data[0] || '');
+        }
+      })
+      .catch(err => {
+        console.error('Error fetching locations:', err);
+        setError(err.message);
+      });
+  }, [initialLocation]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (!firstName.trim()) {
+      setError('Please enter your first name');
+      return;
+    }
+
+    if (!selectedLocation) {
+      setError('Please select a location');
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+ 
+    try {
+      const response = await fetch('http://localhost:3000/queue', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          first_name: firstName.trim(),
+          location: selectedLocation,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to add customer to queue');
+      }
+
+      navigate(`/queue-status/${data.customer_id}`, {
+        state: {
+          firstName: firstName.trim(),
+          location: selectedLocation,
+          initialQueuePosition: data.queue_position,
+        },
+        replace: false,
+      });
+    } catch (err) {
+      console.error('Error submitting form:', err);
+      setError(err.message || 'Failed to add customer to queue');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="App">
       <header className="App-header">
-        <h1>{location}</h1>
+        <h1>Join Queue</h1>
         <button onClick={() => navigate('/')} className="back-button">
           Back to Locations
         </button>
-        <p>Location detail page - coming soon</p>
+        
+        <form onSubmit={handleSubmit} className="queue-form">
+          <div className="form-group">
+            <label htmlFor="location">Location:</label>
+            <select
+              id="location"
+              value={selectedLocation}
+              onChange={(e) => setSelectedLocation(e.target.value)}
+              className="form-input"
+              disabled={submitting}
+            >
+              {locations.map((loc) => (
+                <option key={loc} value={loc}>
+                  {loc}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="firstName">First Name:</label>
+            <input
+              id="firstName"
+              type="text"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              className="form-input"
+              placeholder="Enter your first name"
+              disabled={submitting}
+              required
+            />
+          </div>
+
+          <button 
+            type="submit" 
+            className="submit-button"
+            disabled={submitting}
+          >
+            {submitting ? 'Submitting...' : 'Join Queue'}
+          </button>
+        </form>
+
+        {error && (
+          <div className="error-message">
+            {error}
+          </div>
+        )}
+      </header>
+    </div>
+  );
+}
+
+function QueueStatusPage() {
+  const navigate = useNavigate();
+  const { customerId } = useParams();
+  const locationState = useLocation();
+  const stateData = (locationState && locationState.state) || {};
+
+  const [queuePosition, setQueuePosition] = useState(stateData.initialQueuePosition ?? null);
+  const [status, setStatus] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchStatus = async () => {
+    if (!customerId) {
+      setError('Missing customer ID');
+      setLoading(false);
+      return;
+    }
+
+    setRefreshing(true);
+    try {
+      const response = await fetch(`http://localhost:3000/queue/customer/${customerId}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load queue status');
+      }
+
+      setQueuePosition(data.queue_position);
+      setStatus(data.status);
+      setError(null);
+      setLoading(false);
+    } catch (err) {
+      setError(err.message || 'Failed to load queue status');
+      setLoading(false);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerId]);
+
+  const renderStatusMessage = () => {
+    if (loading) {
+      return <p className="status-subtitle">Loading your queue status...</p>;
+    }
+
+    if (error) {
+      return <p className="status-error">{error}</p>;
+    }
+
+    if (!status) {
+      return <p className="status-subtitle">Waiting for status update...</p>;
+    }
+
+    if (status === 'pending') {
+      return (
+        <div className="status-card pending">
+          <h2>You're in the queue</h2>
+          <p className="queue-position">Current position: <strong>{queuePosition ?? 'Loading...'}</strong></p>
+          <p className="status-subtitle">Click refresh to check for updates.</p>
+        </div>
+      );
+    }
+
+    if (status === 'in_progress') {
+      return (
+        <div className="status-card in-progress">
+          <h2>It's your turn!</h2>
+          <p className="status-subtitle">An employee is headed your way.</p>
+          <p className="status-close-message">You can now close this tab.</p>
+        </div>
+      );
+    }
+
+    if (status === 'completed') {
+      return (
+        <div className="status-card completed">
+          <h2>You're all set!</h2>
+          <p className="status-subtitle">Thanks for visiting.</p>
+          <p className="status-close-message">You can now close this tab.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="status-card other">
+        <h2>Status: {status}</h2>
+        <p className="status-subtitle">Please wait for further updates.</p>
+      </div>
+    );
+  };
+
+  return (
+    <div className="App">
+      <header className="App-header">
+        <h1>Queue Status</h1>
+        {stateData.firstName && (
+          <p className="status-greeting">Hi {stateData.firstName}</p>
+        )}
+        {stateData.location && (
+          <p className="status-location">Location: {stateData.location}</p>
+        )}
+
+        {renderStatusMessage()}
+
+        {(status === 'pending' || !status) && (
+          <button 
+            onClick={fetchStatus} 
+            className="refresh-button"
+            disabled={refreshing}
+          >
+            {refreshing ? 'Refreshing...' : 'Refresh Status'}
+          </button>
+        )}
+
+        <button onClick={() => navigate('/')} className="back-button" style={{ marginTop: '40px' }}>
+          Back to Locations
+        </button>
       </header>
     </div>
   );
@@ -99,6 +352,7 @@ function App() {
     <Routes>
       <Route path="/" element={<LocationsPage />} />
       <Route path="/location/:locationName" element={<LocationDetailPage />} />
+      <Route path="/queue-status/:customerId" element={<QueueStatusPage />} />
     </Routes>
   );
 }
