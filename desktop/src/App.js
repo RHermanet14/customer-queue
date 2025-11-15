@@ -231,6 +231,7 @@ function QueueStatusPage() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   const fetchStatus = async () => {
     if (!customerId) {
@@ -264,6 +265,43 @@ function QueueStatusPage() {
     fetchStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerId]);
+
+  const handleCancel = async () => {
+    if (!customerId) {
+      setError('Missing customer ID');
+      return;
+    }
+
+    if (!window.confirm('Are you sure you want to cancel your place in the queue?')) {
+      return;
+    }
+
+    setCancelling(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`http://localhost:3000/queue/customer/${customerId}/cancel`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to cancel queue entry');
+      }
+
+      // Navigate back to locations page after successful cancellation
+      navigate('/');
+    } catch (err) {
+      console.error('Error cancelling queue entry:', err);
+      setError(err.message || 'Failed to cancel queue entry');
+    } finally {
+      setCancelling(false);
+    }
+  };
 
   const renderStatusMessage = () => {
     if (loading) {
@@ -339,9 +377,16 @@ function QueueStatusPage() {
           </button>
         )}
 
-        <button onClick={() => navigate('/')} className="back-button" style={{ marginTop: '40px' }}>
-          Back to Locations
-        </button>
+        {(status === 'pending' || status === 'in_progress' || !status) && (
+          <button 
+            onClick={handleCancel} 
+            className="cancel-button"
+            disabled={cancelling}
+            style={{ marginTop: '40px' }}
+          >
+            {cancelling ? 'Cancelling...' : 'Cancel Queue Entry'}
+          </button>
+        )}
       </header>
     </div>
   );
