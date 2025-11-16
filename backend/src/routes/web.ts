@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { Pool } from "pg";
+import { updateQueue } from "../queries";
 
 const router = Router();
 
@@ -82,6 +83,43 @@ export function setupWebRoutes(pool: Pool) {
       });
     } catch (error) {
       console.error('Error fetching customer queue status:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  router.put('/queue/customer/:customerId/cancel', async (req: Request, res: Response): Promise<void> => {
+    const { customerId } = req.params;
+
+    if (!customerId) {
+      res.status(400).json({ error: 'Customer ID is required' });
+      return;
+    }
+
+    const parsedId = parseInt(customerId, 10);
+
+    if (Number.isNaN(parsedId)) {
+      res.status(400).json({ error: 'Invalid customer ID' });
+      return;
+    }
+
+    try {
+      // Update customer status to cancelled and set queue_position to 0
+      const updateResult = await pool.query(
+        `UPDATE customer 
+         SET status = 'cancelled', queue_position = 0 
+         WHERE customer_id = $1 AND status IN ('pending', 'in_progress')`,
+        [parsedId]
+      );
+
+      if (updateResult.rowCount === 0) {
+        res.status(404).json({ error: 'Customer not found or cannot be cancelled' });
+        return;
+      }
+      
+      await updateQueue();
+      res.status(200).json({ message: 'Queue entry cancelled successfully' });
+    } catch (error) {
+      console.error('Error cancelling queue entry:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   });

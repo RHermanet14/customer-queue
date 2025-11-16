@@ -11,7 +11,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Set up PostgreSQL connection pool
-const pool = new Pool();
+export const pool = new Pool();
 app.use(express.json());
 app.use(cors());
 

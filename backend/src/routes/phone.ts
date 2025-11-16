@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { Pool } from "pg";
+import { updateQueue } from "../queries";
 
 const router = Router();
 
@@ -99,19 +100,7 @@ export function setupPhoneRoutes(pool: Pool) {
       }
 
       // Reorder the remaining pending customers to close the gap in the queue
-      await pool.query(`
-        WITH ordered AS (
-          SELECT customer_id,
-                 ROW_NUMBER() OVER (ORDER BY queue_position) AS new_pos
-          FROM customer
-          WHERE status = 'pending'
-        )
-        UPDATE customer
-        SET queue_position = ordered.new_pos
-        FROM ordered
-        WHERE customer.customer_id = ordered.customer_id
-          AND customer.status = 'pending';
-      `);
+      await updateQueue();
 
       res.status(200).json({
         message: 'Customer marked as in progress',
