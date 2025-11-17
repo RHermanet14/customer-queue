@@ -84,6 +84,7 @@ function LocationDetailPage() {
   const [locations, setLocations] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState(initialLocation);
   const [firstName, setFirstName] = useState('');
+  const [code, setCode] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -145,11 +146,12 @@ function LocationDetailPage() {
         throw new Error(data.error || 'Failed to add customer to queue');
       }
 
-      navigate(`/queue-status/${data.customer_id}`, {
+      navigate(`/queue-status/${data.access_code}`, {
         state: {
           firstName: firstName.trim(),
           location: selectedLocation,
           initialQueuePosition: data.queue_position,
+          accessCode: data.access_code,
         },
         replace: false,
       });
@@ -222,7 +224,7 @@ function LocationDetailPage() {
 
 function QueueStatusPage() {
   const navigate = useNavigate();
-  const { customerId } = useParams();
+  const { accessCode } = useParams();
   const locationState = useLocation();
   const stateData = (locationState && locationState.state) || {};
 
@@ -234,15 +236,15 @@ function QueueStatusPage() {
   const [cancelling, setCancelling] = useState(false);
 
   const fetchStatus = async () => {
-    if (!customerId) {
-      setError('Missing customer ID');
+    if (!accessCode) {
+      setError('Invalid access code');
       setLoading(false);
       return;
     }
 
     setRefreshing(true);
     try {
-      const response = await fetch(`http://localhost:3000/queue/customer/${customerId}`);
+      const response = await fetch(`http://localhost:3000/queue/customer/${accessCode}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -264,11 +266,11 @@ function QueueStatusPage() {
   useEffect(() => {
     fetchStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerId]);
+  }, [accessCode]);
 
   const handleCancel = async () => {
-    if (!customerId) {
-      setError('Missing customer ID');
+    if (!accessCode) {
+      setError('Missing access code');
       return;
     }
 
@@ -280,7 +282,7 @@ function QueueStatusPage() {
     setError(null);
 
     try {
-      const response = await fetch(`http://localhost:3000/queue/customer/${customerId}/cancel`, {
+      const response = await fetch(`http://localhost:3000/queue/customer/${accessCode}/cancel`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -397,7 +399,7 @@ function App() {
     <Routes>
       <Route path="/" element={<LocationsPage />} />
       <Route path="/location/:locationName" element={<LocationDetailPage />} />
-      <Route path="/queue-status/:customerId" element={<QueueStatusPage />} />
+      <Route path="/queue-status/:accessCode" element={<QueueStatusPage />} />
     </Routes>
   );
 }
