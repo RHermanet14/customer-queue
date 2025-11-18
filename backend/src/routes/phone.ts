@@ -6,17 +6,12 @@ const router = Router();
 
 // This function will receive the pool from server.ts
 export function setupPhoneRoutes(pool: Pool) {
-  // Phone-specific routes will go here
-  // Example:
-  // router.get("/api/phone/...", async (req: Request, res: Response) => {
-  //   // Phone route implementation
-  // });
+
+  // Set customer's status to complete
   router.put('/queue/:id/complete', async (req: Request, res: Response): Promise<void> => {
-    // Support both query parameter and path parameter for flexibility
     const id = req.query.id || req.params.id;
   
     try {
-      // Validate that id is provided and is a number
       if (!id) {
         res.status(400).json({ error: 'ID parameter is required' });
         return;
@@ -27,14 +22,11 @@ export function setupPhoneRoutes(pool: Pool) {
         res.status(400).json({ error: 'Invalid ID parameter' });
         return;
       }
-  
-      // Update the customer status to completed instead of deleting
       const updateResult = await pool.query(
         'UPDATE customer SET status = $1, complete_time = NOW() WHERE customer_id = $2 and status = \'in_progress\'',
         ['completed', parsedId]
       );
-  
-      // Check if the update actually affected a row
+
       if (updateResult.rowCount === 0) {
         res.status(404).json({ error: 'No in-progress customer found' });
         return;
@@ -47,6 +39,7 @@ export function setupPhoneRoutes(pool: Pool) {
     }
   });
 
+  // Get all pending customers
   router.get('/queue', async (req: Request, res: Response): Promise<void> => {
     try {
       const result = await pool.query('SELECT * FROM customer WHERE status = \'pending\' ORDER BY queue_position');
@@ -57,6 +50,7 @@ export function setupPhoneRoutes(pool: Pool) {
     }
   });
 
+  // Get customer at specific position in queue
   router.get('/queue/:position', async (req: Request, res: Response): Promise<void> => {
     const position = req.params.position;
     try {
@@ -72,6 +66,7 @@ export function setupPhoneRoutes(pool: Pool) {
     }
   });
 
+  // Mark customer as in progress
   router.put('/queue/:id', async (req: Request, res: Response): Promise<void> => {
     const idParam = req.params.id ?? (req.query.id as string | undefined);
 

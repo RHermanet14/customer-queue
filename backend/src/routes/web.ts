@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { Pool } from "pg";
 import { updateQueue } from "../queries";
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -31,29 +32,27 @@ export function setupWebRoutes(pool: Pool) {
     }
   });
 
+  // Add customer to queue
   router.post('/queue', async (req: Request, res: Response): Promise<void> => {
     const { first_name, location } = req.body;
     try {
-      const result = await pool.query('INSERT INTO customer (first_name, location, queue_position) VALUES ($1, $2, (SELECT COALESCE(MAX(queue_position), 0) + 1 FROM customer WHERE status = \'pending\')) RETURNING customer_id, queue_position', [first_name, location]);
-      res.status(200).json({ message: 'Customer added to queue', customer_id: result.rows[0].customer_id, queue_position: result.rows[0].queue_position });
+        const accessCode = crypto.randomBytes(16).toString('hex'); // 32-char random string
+      const result = await pool.query(`INSERT INTO customer (first_name, location, queue_position, access_code)
+         VALUES ($1, $2, (SELECT COALESCE(MAX(queue_position), 0) + 1 FROM customer WHERE status = \'pending\'), $3) 
+         RETURNING customer_id, queue_position, access_code`, [first_name, location, accessCode]);
+      res.status(200).json({ message: 'Customer added to queue', customer_id: result.rows[0].customer_id, queue_position: result.rows[0].queue_position, access_code: result.rows[0].access_code });
     } catch (error) {
       console.error('Error adding customer to queue:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   });
 
-  router.get('/queue/customer/:customerId', async (req: Request, res: Response): Promise<void> => {
-    const { customerId } = req.params;
+  // Get specific customer by their access code
+  router.get('/queue/customer/:accessCode', async (req: Request, res: Response): Promise<void> => {
+    const { accessCode } = req.params;
 
-    if (!customerId) {
-      res.status(400).json({ error: 'Customer ID is required' });
-      return;
-    }
-
-    const parsedId = parseInt(customerId, 10);
-
-    if (Number.isNaN(parsedId)) {
-      res.status(400).json({ error: 'Invalid customer ID' });
+    if (!accessCode) {
+      res.status(400).json({ error: 'Access code is required' });
       return;
     }
 
@@ -61,8 +60,8 @@ export function setupWebRoutes(pool: Pool) {
       const result = await pool.query(
         `SELECT customer_id, first_name, location, status, queue_position, add_time, start_time, complete_time
          FROM customer
-         WHERE customer_id = $1`,
-        [parsedId]
+         WHERE access_code = $1`,
+        [accessCode]
       );
 
       if (result.rowCount === 0) {
@@ -87,18 +86,12 @@ export function setupWebRoutes(pool: Pool) {
     }
   });
 
-  router.put('/queue/customer/:customerId/cancel', async (req: Request, res: Response): Promise<void> => {
-    const { customerId } = req.params;
+  // Cancel customer waiting in queue
+  router.put('/queue/customer/:accessCode/cancel', async (req: Request, res: Response): Promise<void> => {
+    const { accessCode } = req.params;
 
-    if (!customerId) {
-      res.status(400).json({ error: 'Customer ID is required' });
-      return;
-    }
-
-    const parsedId = parseInt(customerId, 10);
-
-    if (Number.isNaN(parsedId)) {
-      res.status(400).json({ error: 'Invalid customer ID' });
+    if (!accessCode) {
+      res.status(400).json({ error: 'Access code is required' });
       return;
     }
 
@@ -107,15 +100,15 @@ export function setupWebRoutes(pool: Pool) {
       const updateResult = await pool.query(
         `UPDATE customer 
          SET status = 'cancelled', queue_position = 0 
-         WHERE customer_id = $1 AND status IN ('pending', 'in_progress')`,
-        [parsedId]
+         WHERE access_code = $1 AND status IN ('pending', 'in_progress')`,
+        [accessCode]
       );
 
       if (updateResult.rowCount === 0) {
         res.status(404).json({ error: 'Customer not found or cannot be cancelled' });
         return;
       }
-      
+
       await updateQueue();
       res.status(200).json({ message: 'Queue entry cancelled successfully' });
     } catch (error) {

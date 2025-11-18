@@ -8,6 +8,7 @@ CREATE TABLE customer (
     first_name VARCHAR(32),
     location location_enum NOT NULL,
     queue_position INT NOT NULL,
+    access_code TEXT UNIQUE NOT NULL,
     add_time TIMESTAMP DEFAULT NOW(),
     start_time TIMESTAMP,
     complete_time TIMESTAMP,
