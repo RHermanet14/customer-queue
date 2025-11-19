@@ -4,6 +4,7 @@ import cors from "cors";
 import dotenv from 'dotenv';
 import { setupWebRoutes } from "./routes/web";
 import { setupPhoneRoutes } from "./routes/phone";
+import { setupAuthRoutes } from "./routes/auth";
 
 dotenv.config();
 
@@ -31,6 +32,7 @@ app.get("/api/test-db", async (req: Request, res: Response) => {
 });
 
 // Set up routes for each frontend
+app.use(setupAuthRoutes(pool));
 app.use(setupWebRoutes(pool));
 app.use(setupPhoneRoutes(pool));
 
