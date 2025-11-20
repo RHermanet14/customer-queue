@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS users;
 DROP TABLE IF EXISTS customer;
 DROP TYPE IF EXISTS location_enum;
 
@@ -14,3 +16,21 @@ CREATE TABLE customer (
     complete_time TIMESTAMP,
     status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled'))
 );
+
+CREATE TABLE users (
+    user_id SERIAL PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE sessions (
+    session_id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    token TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Insert default admin user (username: admin, password: password)
+-- Password hash generated with bcrypt (12 rounds)
+INSERT INTO users (username, password_hash) VALUES ('admin', '$2b$12$C4pTRyFjEdYOFEQCLePmBOXFJ6CYBoS0cwZWGKaHJNYDaPXemIRzC');

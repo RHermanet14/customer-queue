@@ -1,23 +1,43 @@
 import { Router, Request, Response } from "express";
 import { Pool } from "pg";
 import { updateQueue } from "../queries";
+import { AuthenticatedRequest, createAuthMiddleware } from "../middleware/auth";
 
-const router = Router();
+const extractIdParam = (req: Request): string | undefined => {
+  if (typeof req.params.id === "string" && req.params.id.length > 0) {
+    return req.params.id;
+  }
+
+  const queryId = req.query.id;
+  if (typeof queryId === "string" && queryId.length > 0) {
+    return queryId;
+  }
+
+  if (Array.isArray(queryId) && queryId.length > 0 && typeof queryId[0] === "string") {
+    return queryId[0];
+  }
+
+  return undefined;
+};
 
 // This function will receive the pool from server.ts
 export function setupPhoneRoutes(pool: Pool) {
+  const router = Router();
+  const authMiddleware = createAuthMiddleware(pool);
+
+  router.use(authMiddleware);
 
   // Set customer's status to complete
-  router.put('/queue/:id/complete', async (req: Request, res: Response): Promise<void> => {
-    const id = req.query.id || req.params.id;
+  router.put('/queue/:id/complete', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const id = extractIdParam(req);
   
+    if (!id) {
+      res.status(400).json({ error: 'ID parameter is required' });
+      return;
+    }
+
     try {
-      if (!id) {
-        res.status(400).json({ error: 'ID parameter is required' });
-        return;
-      }
-      
-      const parsedId = parseInt(id as string, 10);
+      const parsedId = parseInt(id, 10);
       if (isNaN(parsedId)) {
         res.status(400).json({ error: 'Invalid ID parameter' });
         return;
@@ -39,10 +59,16 @@ export function setupPhoneRoutes(pool: Pool) {
     }
   });
 
-  // Get all pending customers
-  router.get('/queue', async (req: Request, res: Response): Promise<void> => {
+  // Get all active customers (pending and in_progress)
+  router.get('/queue', async (_req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      const result = await pool.query('SELECT * FROM customer WHERE status = \'pending\' ORDER BY queue_position');
+      const result = await pool.query(
+        `SELECT * FROM customer 
+         WHERE status IN ('pending', 'in_progress') 
+         ORDER BY 
+           CASE WHEN status = 'in_progress' THEN 0 ELSE 1 END,
+           queue_position`
+      );
       res.status(200).json(result.rows);
     } catch (error) {
       console.error('Error fetching queue:', error);
@@ -50,38 +76,59 @@ export function setupPhoneRoutes(pool: Pool) {
     }
   });
 
-  // Get customer at specific position in queue
-  router.get('/queue/:position', async (req: Request, res: Response): Promise<void> => {
-    const position = req.params.position;
+  // Get customer by customer_id (authenticated)
+  router.get('/queue/customer-id/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const { id: customerIdParam } = req.params;
+
+    if (!customerIdParam) {
+      res.status(400).json({ error: 'Customer ID is required' });
+      return;
+    }
+
+    const customerId = parseInt(customerIdParam, 10);
+
+    if (Number.isNaN(customerId)) {
+      res.status(400).json({ error: 'Invalid customer ID' });
+      return;
+    }
+
     try {
-      const result = await pool.query('SELECT * FROM customer WHERE queue_position = $1', [position]);
+      console.log(`[Phone API] Fetching customer with ID: ${customerId} for user: ${req.userId}`);
+      const result = await pool.query(
+        'SELECT * FROM customer WHERE customer_id = $1',
+        [customerId]
+      );
+      
       if (result.rowCount === 0) {
-        res.status(404).json({ error: 'No customer found at the specified queue position' });
+        console.log(`[Phone API] Customer ${customerId} not found in database`);
+        res.status(404).json({ error: 'Customer not found' });
         return;
       }
+      
+      console.log(`[Phone API] Found customer: ${JSON.stringify(result.rows[0])}`);
       res.status(200).json(result.rows[0]);
     } catch (error) {
-      console.error('Error fetching queue:', error);
+      console.error('Error fetching customer:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   });
 
   // Mark customer as in progress
-  router.put('/queue/:id', async (req: Request, res: Response): Promise<void> => {
-    const idParam = req.params.id ?? (req.query.id as string | undefined);
+  router.put('/queue/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    const idParam = extractIdParam(req);
 
     if (!idParam) {
       res.status(400).json({ error: 'ID parameter is required' });
       return;
     }
 
-    const parsedId = parseInt(idParam as string, 10);
-    if (Number.isNaN(parsedId)) {
-      res.status(400).json({ error: 'Invalid ID parameter' });
-      return;
-    }
-
     try {
+      const parsedId = parseInt(idParam, 10);
+      if (Number.isNaN(parsedId)) {
+        res.status(400).json({ error: 'Invalid ID parameter' });
+        return;
+      }
+
       // Mark the customer at this position as in progress and remove them from the active queue
       const updateResult = await pool.query(
         `UPDATE customer SET status = $1, start_time = NOW(), queue_position = 0 WHERE customer_id = $2 AND status = 'pending'
@@ -109,4 +156,3 @@ export function setupPhoneRoutes(pool: Pool) {
 
   return router;
 }
-
