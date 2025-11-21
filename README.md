@@ -30,4 +30,7 @@ actual use case for a TODO list.
 
 ## Note (After Finishing Project)
 
-TODO.
+I did more than I thought I would; nothing wrong with a smaller project. I considered trying
+to run this with Docker, but there isn't really a good reason other than just because I
+could. I might consider making it compatible with Docker, but for now, I got everything
+I wanted out of this project.
